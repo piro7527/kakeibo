@@ -1,26 +1,39 @@
 import React, { useState } from 'react';
 
-const ImageUploader = ({ onImageSelected, isLoading }) => {
-    const [preview, setPreview] = useState(null);
+const ImageUploader = ({ onImagesSelected, isLoading }) => {
+    const [previews, setPreviews] = useState([]);
     const [isDragging, setIsDragging] = useState(false);
 
     // Handle file selection (via input or drop)
-    const processFile = (file) => {
-        if (file && file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setPreview(reader.result);
-                const base64Data = reader.result.split(',')[1];
-                const mimeType = file.type;
-                onImageSelected(base64Data, mimeType);
-            };
-            reader.readAsDataURL(file);
+    const processFiles = (files) => {
+        const validFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+
+        if (validFiles.length > 0) {
+            const newPreviews = [];
+            const results = [];
+            let processedCount = 0;
+
+            validFiles.forEach(file => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    newPreviews.push(reader.result);
+                    const base64Data = reader.result.split(',')[1];
+                    const mimeType = file.type;
+                    results.push({ base64Data, mimeType });
+
+                    processedCount++;
+                    if (processedCount === validFiles.length) {
+                        setPreviews(newPreviews);
+                        onImagesSelected(results);
+                    }
+                };
+                reader.readAsDataURL(file);
+            });
         }
     };
 
     const handleFileChange = (e) => {
-        const file = e.target.files[0];
-        processFile(file);
+        processFiles(e.target.files);
     };
 
     const handleDragOver = (e) => {
@@ -36,15 +49,14 @@ const ImageUploader = ({ onImageSelected, isLoading }) => {
     const handleDrop = (e) => {
         e.preventDefault();
         setIsDragging(false);
-        const file = e.dataTransfer.files[0];
-        processFile(file);
+        processFiles(e.dataTransfer.files);
     };
 
     return (
         <div className="w-full max-w-md mx-auto p-4 bg-white rounded-xl shadow-md space-y-4">
             <div className="text-center">
                 <h2 className="text-xl font-bold text-gray-800 mb-2">レシート登録</h2>
-                <p className="text-sm text-gray-500 mb-4">レシートを撮影またはアップロードしてください</p>
+                <p className="text-sm text-gray-500 mb-4">レシートを撮影またはアップロードしてください（複数可）</p>
             </div>
 
             <div
@@ -55,12 +67,17 @@ const ImageUploader = ({ onImageSelected, isLoading }) => {
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
             >
-                {preview ? (
-                    <img
-                        src={preview}
-                        alt="Receipt preview"
-                        className="max-h-64 object-contain rounded-md mb-4"
-                    />
+                {previews.length > 0 ? (
+                    <div className="grid grid-cols-3 gap-2 mb-4 w-full">
+                        {previews.map((src, index) => (
+                            <img
+                                key={index}
+                                src={src}
+                                alt={`Receipt preview ${index + 1}`}
+                                className="h-20 w-full object-cover rounded-md"
+                            />
+                        ))}
+                    </div>
                 ) : (
                     <div className="text-gray-400 mb-2 pointer-events-none">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -75,13 +92,14 @@ const ImageUploader = ({ onImageSelected, isLoading }) => {
                     htmlFor="file-upload"
                     className={`cursor-pointer bg-blue-600 text-white py-2 px-6 rounded-full font-semibold shadow hover:bg-blue-700 transition duration-300 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                    {isLoading ? '処理中...' : (preview ? '再撮影 / 選択' : 'カメラ / アップロード')}
+                    {isLoading ? '処理中...' : (previews.length > 0 ? '追加 / 再選択' : 'カメラ / アップロード')}
                 </label>
                 <input
                     id="file-upload"
                     type="file"
                     accept="image/*,.heic,.heif"
                     capture="environment"
+                    multiple
                     onChange={handleFileChange}
                     disabled={isLoading}
                     className="hidden"
