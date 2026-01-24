@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, getDocs, deleteDoc, doc, writeBatch } from "firebase/firestore";
-import { db } from "../firebase";
+import { db, auth } from "../firebase";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
@@ -21,6 +21,13 @@ const Dashboard = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
+            const user = auth.currentUser;
+            if (!user) {
+                setExpenses([]);
+                setLoading(false);
+                return;
+            }
+
             let q;
             const [year, month] = currentMonth.split('-').map(Number);
 
@@ -31,6 +38,7 @@ const Dashboard = () => {
 
                 q = query(
                     collection(db, "expenses"),
+                    where("uid", "==", user.uid),
                     where("date", ">=", startDate),
                     where("date", "<=", endDate),
                     orderBy("date", "desc")
@@ -42,6 +50,7 @@ const Dashboard = () => {
 
                 q = query(
                     collection(db, "expenses"),
+                    where("uid", "==", user.uid),
                     where("date", ">=", startDate),
                     where("date", "<=", endDate),
                     orderBy("date", "desc")

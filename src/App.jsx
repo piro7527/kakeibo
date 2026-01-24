@@ -1,15 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { auth } from "./firebase";
+import Login from './components/Login';
 import ImageUploader from './components/ImageUploader';
 import ResultDisplay from './components/ResultDisplay';
 import Dashboard from './components/Dashboard';
 import { analyzeImage } from './gemini';
 
 function App() {
+  const [user, setUser] = useState(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
   const [currentView, setCurrentView] = useState('upload'); // 'upload' | 'dashboard'
   const [data, setData] = useState(null); // Currently editing/viewing result
   const [pendingResults, setPendingResults] = useState([]); // Results waiting for review
   const [processingStatus, setProcessingStatus] = useState({ total: 0, current: 0, active: false });
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoadingAuth(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Logout failed", error);
+    }
+  };
 
   const handleImagesSelected = async (imagesData) => {
     setProcessingStatus({ total: imagesData.length, current: 0, active: true });
@@ -51,6 +72,14 @@ function App() {
     // If pending remains, user sees list again.
   };
 
+  if (loadingAuth) {
+    return <div className="min-h-screen flex items-center justify-center">読み込み中...</div>;
+  }
+
+  if (!user) {
+    return <Login />;
+  }
+
   return (
     <div className="min-h-screen bg-gray-100 font-sans text-gray-900 pb-20">
       <header className="bg-white shadow-sm sticky top-0 z-10">
@@ -61,20 +90,31 @@ function App() {
           >
             AIレシート家計簿
           </h1>
-          <nav className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
+          <div className="flex items-center gap-4">
+            <nav className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
+              <button
+                onClick={() => setCurrentView('upload')}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${currentView === 'upload' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                登録
+              </button>
+              <button
+                onClick={() => setCurrentView('dashboard')}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${currentView === 'dashboard' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                グラフ
+              </button>
+            </nav>
             <button
-              onClick={() => setCurrentView('upload')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${currentView === 'upload' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              onClick={handleLogout}
+              className="text-gray-400 hover:text-gray-600"
+              title="ログアウト"
             >
-              登録
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
             </button>
-            <button
-              onClick={() => setCurrentView('dashboard')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${currentView === 'dashboard' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              グラフ
-            </button>
-          </nav>
+          </div>
         </div>
       </header>
 

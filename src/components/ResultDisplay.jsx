@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, addDoc } from "firebase/firestore";
-import { db } from "../firebase";
+import { db, auth } from "../firebase";
 
 const ResultDisplay = ({ data, onSave }) => {
     const [isEditing, setIsEditing] = useState(false);
@@ -37,9 +37,16 @@ const ResultDisplay = ({ data, onSave }) => {
     const handleSave = async () => {
         setIsSaving(true);
         try {
+            const user = auth.currentUser;
+            if (!user) {
+                alert("ログインが必要です。");
+                return;
+            }
+
             // Save to Firestore
             const docRef = await addDoc(collection(db, "expenses"), {
                 ...formData,
+                uid: user.uid,
                 createdAt: new Date()
             });
             console.log("Document written with ID: ", docRef.id);
