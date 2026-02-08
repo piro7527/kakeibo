@@ -61,6 +61,24 @@ function App() {
     setData(result);
   };
 
+  const handleManualEntry = () => {
+    const today = new Date().toISOString().split('T')[0];
+    setData({
+      merchant: '',
+      date: today,
+      totalAmount: 0,
+      category: '',
+      items: [],
+      isManualEntry: true,
+      _tempId: Date.now() // specific temp ID for manual entry
+    });
+  };
+
+  const handleEdit = (expense) => {
+    setData(expense);
+    setCurrentView('upload'); // Switch to upload/edit view
+  };
+
   const handleSaveComplete = () => {
     // Remove the saved item from pending results
     if (data && data._tempId) {
@@ -131,7 +149,24 @@ function App() {
               )}
 
               {!data && !processingStatus.active && (
-                <ImageUploader onImagesSelected={handleImagesSelected} isLoading={processingStatus.active} />
+                <div className="space-y-6">
+                  <ImageUploader onImagesSelected={handleImagesSelected} isLoading={processingStatus.active} />
+
+                  <div className="text-center relative">
+                    <span className="bg-gray-100 px-3 text-gray-400 text-xs relative z-10">または</span>
+                    <div className="absolute top-1/2 left-0 w-full border-t border-gray-300 transform -translate-y-1/2 z-0"></div>
+                  </div>
+
+                  <button
+                    onClick={handleManualEntry}
+                    className="w-full bg-white border-2 border-dashed border-gray-300 text-gray-500 py-3 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all font-semibold flex items-center justify-center gap-2"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    手動で入力
+                  </button>
+                </div>
               )}
 
               {processingStatus.active && (
@@ -184,7 +219,7 @@ function App() {
         )}
 
         {currentView === 'dashboard' && (
-          <Dashboard />
+          <Dashboard onEdit={handleEdit} />
         )}
       </main>
     </div>

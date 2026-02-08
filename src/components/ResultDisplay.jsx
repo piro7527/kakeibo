@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc } from "firebase/firestore";
+import { collection, addDoc, updateDoc, doc } from "firebase/firestore";
 import { db, auth } from "../firebase";
 
 const ResultDisplay = ({ data, onSave }) => {
@@ -10,6 +10,24 @@ const ResultDisplay = ({ data, onSave }) => {
     useEffect(() => {
         if (data) {
             setFormData(data);
+            // Should start in edit mode if it's a manual entry (no ID yet but user wants to 'edit' the blank form)
+            // OR if it's an existing item being edited.
+            // Actually, for manual entry, we want the user to see the form immediately.
+            // For scanned receipts, they see the summary first.
+            // Let's rely on a prop or check if it's "raw" data?
+            // Simplest: If it has an ID, it's an EDIT of an existing item -> Show form? Or summary?
+            // If it has NO ID (scanned or manual), it's a NEW item.
+
+            // Logic refinement:
+            // - Scanned: No ID. User reviews summary. Can click "Edit".
+            // - Manual: No ID. User should see FORM immediately. 
+            // - Edit Existing: Has ID. User should see FORM immediately? Or summary? Probably Form.
+
+            if (data.isManualEntry || data.id) {
+                setIsEditing(true);
+            } else {
+                setIsEditing(false);
+            }
         }
     }, [data]);
 
@@ -34,6 +52,21 @@ const ResultDisplay = ({ data, onSave }) => {
         }));
     };
 
+    const handleDeleteItem = (index) => {
+        const newItems = formData.items.filter((_, i) => i !== index);
+        setFormData(prev => ({
+            ...prev,
+            items: newItems
+        }));
+    };
+
+    const handleAddItem = () => {
+        setFormData(prev => ({
+            ...prev,
+            items: [...(prev.items || []), { name: '', price: 0, category: '' }]
+        }));
+    }
+
     const handleSave = async () => {
         setIsSaving(true);
         try {
@@ -43,18 +76,44 @@ const ResultDisplay = ({ data, onSave }) => {
                 return;
             }
 
-            // Save to Firestore
-            const docRef = await addDoc(collection(db, "expenses"), {
-                ...formData,
+            // Clean up: remove temporary flags
+            const { isManualEntry, _tempId, id, ...dataToSave } = formData;
+            const payload = {
+                ...dataToSave,
                 uid: user.uid,
-                createdAt: new Date()
-            });
-            console.log("Document written with ID: ", docRef.id);
+                // Only update createdAt if it's new? Or keep original?
+                // For updates, generally we don't change createdAt.
+                // For new, we add it. 
+                // dataToSave already has createdAt if it's an edit, but we might want updatedAt?
+            };
+
+            if (!payload.createdAt) {
+                payload.createdAt = new Date().toISOString().split('T')[0]; // Simple YYYY-MM-DD for now or ISO string
+                // Actually the current code used new Date() object which Firestore handles.
+                // Let's stick to what was there or make it consistent.
+                // Previous code: createdAt: new Date()
+            }
+
+            if (id) {
+                // Update existing
+                const docRef = doc(db, "expenses", id);
+                // We don't want to overwrite uid or createsAt if not necessary, but spread handles it.
+                // Ensure we don't accidentally create a new one.
+                await updateDoc(docRef, payload);
+                console.log("Document updated with ID: ", id);
+                alert("更新しました！");
+            } else {
+                // Create new
+                if (!payload.createdAt) payload.createdAt = new Date(); // As object
+                const docRef = await addDoc(collection(db, "expenses"), payload);
+                console.log("Document written with ID: ", docRef.id);
+                alert("保存しました！");
+            }
+
             setIsEditing(false);
-            alert("保存しました！");
             if (onSave) onSave();
         } catch (e) {
-            console.error("Error adding document: ", e);
+            console.error("Error adding/updating document: ", e);
             alert("保存に失敗しました。Firestoreの設定を確認してください。");
         } finally {
             setIsSaving(false);
@@ -64,7 +123,7 @@ const ResultDisplay = ({ data, onSave }) => {
     if (isEditing) {
         return (
             <div className="w-full max-w-md mx-auto mt-6 bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 p-4">
-                <h3 className="text-lg font-bold mb-4 text-gray-800">内容を編集</h3>
+                <h3 className="text-lg font-bold mb-4 text-gray-800">{formData.id ? '支出を編集' : '内容を編集'}</h3>
 
                 <div className="space-y-4">
                     <div>
@@ -74,6 +133,7 @@ const ResultDisplay = ({ data, onSave }) => {
                             value={formData.merchant || ''}
                             onChange={(e) => handleChange('merchant', e.target.value)}
                             className="w-full border rounded p-2 text-sm"
+                            placeholder="例: スーパー〇〇"
                         />
                     </div>
                     <div className="flex gap-2">
@@ -98,17 +158,34 @@ const ResultDisplay = ({ data, onSave }) => {
                     </div>
                     <div>
                         <label className="block text-xs text-gray-500">カテゴリ</label>
-                        <input
-                            type="text"
+                        <select
                             value={formData.category || ''}
                             onChange={(e) => handleChange('category', e.target.value)}
                             className="w-full border rounded p-2 text-sm"
-                        />
+                        >
+                            <option value="">選択してください</option>
+                            <option value="食費">食費</option>
+                            <option value="日用品">日用品</option>
+                            <option value="交通費">交通費</option>
+                            <option value="医療費">医療費</option>
+                            <option value="交際費">交際費</option>
+                            <option value="娯楽費">娯楽費</option>
+                            <option value="その他">その他</option>
+                        </select>
                     </div>
                 </div>
 
                 <div className="mt-6">
-                    <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">明細</h4>
+                    <div className="flex justify-between items-center mb-2">
+                        <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">明細</h4>
+                        <button
+                            type="button"
+                            onClick={handleAddItem}
+                            className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded hover:bg-blue-100"
+                        >
+                            + 追加
+                        </button>
+                    </div>
                     <div className="space-y-3 max-h-60 overflow-y-auto">
                         {formData.items && formData.items.map((item, index) => (
                             <div key={index} className="flex gap-2 items-start border-b pb-2">
@@ -136,8 +213,17 @@ const ResultDisplay = ({ data, onSave }) => {
                                         className="w-full border rounded p-1 text-xs text-right"
                                     />
                                 </div>
+                                <button
+                                    onClick={() => handleDeleteItem(index)}
+                                    className="text-gray-400 hover:text-red-500 pt-1"
+                                >
+                                    ×
+                                </button>
                             </div>
                         ))}
+                        {(!formData.items || formData.items.length === 0) && (
+                            <p className="text-xs text-gray-400 text-center py-2">明細なし</p>
+                        )}
                     </div>
                 </div>
 
@@ -147,12 +233,16 @@ const ResultDisplay = ({ data, onSave }) => {
                         disabled={isSaving}
                         className={`flex-1 bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700 ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
-                        {isSaving ? '保存中...' : '保存'}
+                        {isSaving ? '保存中...' : (formData.id ? '更新' : '保存')}
                     </button>
                     <button
                         onClick={() => {
-                            setIsEditing(false);
-                            setFormData(data); // Revert
+                            if (formData.isManualEntry) {
+                                if (onSave) onSave(); // Exit manual entry without saving
+                            } else {
+                                setIsEditing(false);
+                                setFormData(data); // Revert
+                            }
                         }}
                         disabled={isSaving}
                         className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-300"

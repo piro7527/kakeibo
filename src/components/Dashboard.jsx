@@ -5,7 +5,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Ba
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
-const Dashboard = () => {
+const Dashboard = ({ onEdit }) => {
     const [expenses, setExpenses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [viewMode, setViewMode] = useState('monthly'); // 'monthly' | 'yearly'
@@ -301,6 +301,15 @@ const Dashboard = () => {
                                             </div>
                                             <div className="flex items-center space-x-3">
                                                 <div className="font-bold text-gray-700">¥{Number(expense.totalAmount).toLocaleString()}</div>
+                                                <button
+                                                    onClick={() => onEdit(expense)}
+                                                    className="text-gray-300 hover:text-blue-500 p-1 rounded-full transition-colors"
+                                                    title="編集"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                    </svg>
+                                                </button>
                                                 <button
                                                     onClick={() => handleDelete(expense.id)}
                                                     className="text-gray-300 hover:text-red-500 p-1 rounded-full transition-colors"
