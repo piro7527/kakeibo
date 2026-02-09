@@ -6,7 +6,15 @@ const ImageUploader = ({ onImagesSelected, isLoading }) => {
 
     // Handle file selection (via input or drop)
     const processFiles = (files) => {
-        const validFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+        const validFiles = Array.from(files).filter(file => {
+            // Check MIME type or file extension for HEIC/HEIF support
+            if (file.type.startsWith('image/')) {
+                return true;
+            }
+            // Handle HEIC/HEIF files (iPhone photos) which may have empty type
+            const lowerName = file.name.toLowerCase();
+            return lowerName.endsWith('.heic') || lowerName.endsWith('.heif');
+        });
 
         if (validFiles.length > 0) {
             const newPreviews = [];
@@ -18,7 +26,16 @@ const ImageUploader = ({ onImagesSelected, isLoading }) => {
                 reader.onloadend = () => {
                     newPreviews.push(reader.result);
                     const base64Data = reader.result.split(',')[1];
-                    const mimeType = file.type;
+                    // Use file.type, or infer from extension if empty (e.g., HEIC)
+                    let mimeType = file.type;
+                    if (!mimeType) {
+                        const lowerName = file.name.toLowerCase();
+                        if (lowerName.endsWith('.heic') || lowerName.endsWith('.heif')) {
+                            mimeType = 'image/heic';
+                        } else {
+                            mimeType = 'image/jpeg'; // fallback
+                        }
+                    }
                     results.push({ base64Data, mimeType });
 
                     processedCount++;

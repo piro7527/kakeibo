@@ -7,7 +7,7 @@ let model = null;
 
 if (API_KEY) {
     genAI = new GoogleGenerativeAI(API_KEY);
-    model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
+    model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
 } else {
     console.warn("Gemini API Key is missing!");
 }
@@ -39,6 +39,7 @@ export const analyzeImage = async (base64Image, mimeType = "image/jpeg") => {
     };
 
     try {
+        console.log("Calling Gemini API with mimeType:", mimeType);
         const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
         const text = response.text();
@@ -49,6 +50,9 @@ export const analyzeImage = async (base64Image, mimeType = "image/jpeg") => {
         return JSON.parse(cleanText);
     } catch (error) {
         console.error("Error analyzing receipt:", error);
-        throw error;
+        console.error("Error details:", error.message, error.status, error.statusInfo);
+        // Re-throw with more context
+        const errorMessage = error.message || "Unknown error";
+        throw new Error(`Gemini API Error: ${errorMessage}`);
     }
 };
