@@ -6,23 +6,12 @@ const ResultDisplay = ({ data, onSave }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
+    const [customCategory, setCustomCategory] = useState('');
 
     useEffect(() => {
         if (data) {
             setFormData(data);
-            // Should start in edit mode if it's a manual entry (no ID yet but user wants to 'edit' the blank form)
-            // OR if it's an existing item being edited.
-            // Actually, for manual entry, we want the user to see the form immediately.
-            // For scanned receipts, they see the summary first.
-            // Let's rely on a prop or check if it's "raw" data?
-            // Simplest: If it has an ID, it's an EDIT of an existing item -> Show form? Or summary?
-            // If it has NO ID (scanned or manual), it's a NEW item.
-
-            // Logic refinement:
-            // - Scanned: No ID. User reviews summary. Can click "Edit".
-            // - Manual: No ID. User should see FORM immediately. 
-            // - Edit Existing: Has ID. User should see FORM immediately? Or summary? Probably Form.
-
+            setCustomCategory('');
             if (data.isManualEntry || data.id) {
                 setIsEditing(true);
             } else {
@@ -78,6 +67,10 @@ const ResultDisplay = ({ data, onSave }) => {
 
             // Clean up: remove temporary flags
             const { isManualEntry, _tempId, id, ...dataToSave } = formData;
+            // 「その他」かつ手入力がある場合、カテゴリを上書き
+            if (dataToSave.category === 'その他' && customCategory.trim()) {
+                dataToSave.category = customCategory.trim();
+            }
             const payload = {
                 ...dataToSave,
                 uid: user.uid,
@@ -164,14 +157,35 @@ const ResultDisplay = ({ data, onSave }) => {
                             className="w-full border rounded p-2 text-sm"
                         >
                             <option value="">選択してください</option>
-                            <option value="食費">食費</option>
-                            <option value="日用品">日用品</option>
-                            <option value="交通費">交通費</option>
-                            <option value="医療費">医療費</option>
-                            <option value="交際費">交際費</option>
-                            <option value="娯楽費">娯楽費</option>
-                            <option value="その他">その他</option>
+                            <option value="食費">🍱 食費</option>
+                            <option value="外食費">🍜 外食費</option>
+                            <option value="カフェ">☕ カフェ</option>
+                            <option value="日用品">🧴 日用品</option>
+                            <option value="衣服・美容">👗 衣服・美容</option>
+                            <option value="交通費">🚃 交通費</option>
+                            <option value="ガソリン">⛽ ガソリン</option>
+                            <option value="医療費">💊 医療費</option>
+                            <option value="交際費">🎁 交際費</option>
+                            <option value="娯楽費">🎮 娯楽費</option>
+                            <option value="教育費">📚 教育費</option>
+                            <option value="通信費">📱 通信費</option>
+                            <option value="光熱費">💡 光熱費</option>
+                            <option value="家賃">🏠 家賃</option>
+                            <option value="保険">🛡️ 保険</option>
+                            <option value="サブスク">🔄 サブスク</option>
+                            <option value="貯蓄・投資">💰 貯蓄・投資</option>
+                            <option value="その他">📦 その他</option>
                         </select>
+                        {formData.category === 'その他' && (
+                            <input
+                                type="text"
+                                placeholder="カテゴリを入力してください"
+                                value={customCategory}
+                                onChange={(e) => setCustomCategory(e.target.value)}
+                                className="mt-2 w-full border rounded p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                autoFocus
+                            />
+                        )}
                     </div>
                 </div>
 
@@ -186,10 +200,10 @@ const ResultDisplay = ({ data, onSave }) => {
                             + 追加
                         </button>
                     </div>
-                    <div className="space-y-3 max-h-60 overflow-y-auto">
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
                         {formData.items && formData.items.map((item, index) => (
-                            <div key={index} className="flex gap-2 items-start border-b pb-2">
-                                <div className="flex-1 space-y-1">
+                            <div key={index} className="grid grid-cols-[1fr_72px_24px] gap-1 items-start border-b pb-2">
+                                <div className="space-y-1 min-w-0">
                                     <input
                                         type="text"
                                         placeholder="商品名"
@@ -205,17 +219,15 @@ const ResultDisplay = ({ data, onSave }) => {
                                         className="w-full border rounded p-1 text-xs text-gray-500"
                                     />
                                 </div>
-                                <div className="w-20">
-                                    <input
-                                        type="number"
-                                        value={item.price}
-                                        onChange={(e) => handleItemChange(index, 'price', e.target.value)}
-                                        className="w-full border rounded p-1 text-xs text-right"
-                                    />
-                                </div>
+                                <input
+                                    type="number"
+                                    value={item.price}
+                                    onChange={(e) => handleItemChange(index, 'price', e.target.value)}
+                                    className="w-full border rounded p-1 text-xs text-right"
+                                />
                                 <button
                                     onClick={() => handleDeleteItem(index)}
-                                    className="text-gray-400 hover:text-red-500 pt-1"
+                                    className="text-gray-400 hover:text-red-500 text-base leading-none mt-1 flex items-center justify-center"
                                 >
                                     ×
                                 </button>

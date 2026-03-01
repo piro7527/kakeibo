@@ -3,12 +3,13 @@ import { collection, query, where, orderBy, getDocs, deleteDoc, doc, writeBatch 
 import { db, auth } from "../firebase";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#ff6b6b', '#a29bfe', '#fd79a8', '#00b894', '#e17055', '#74b9ff', '#55efc4', '#fdcb6e', '#636e72', '#b2bec3', '#dfe6e9'];
 
 const Dashboard = ({ onEdit }) => {
     const [expenses, setExpenses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [viewMode, setViewMode] = useState('monthly'); // 'monthly' | 'yearly'
+    const [showAllExpenses, setShowAllExpenses] = useState(false);
     const [currentMonth, setCurrentMonth] = useState(() => {
         const now = new Date();
         return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -279,16 +280,26 @@ const Dashboard = ({ onEdit }) => {
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-bold text-gray-800">最近の支出</h3>
-                            {expenses.length > 0 && (
-                                <button
-                                    onClick={handleDeleteAll}
-                                    className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 hover:bg-red-50 rounded"
-                                >
-                                    今月のデータを全て削除
-                                </button>
-                            )}
+                            <div className="flex items-center gap-2">
+                                {expenses.length > 5 && (
+                                    <button
+                                        onClick={() => setShowAllExpenses(prev => !prev)}
+                                        className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 hover:bg-blue-50 rounded transition-colors"
+                                    >
+                                        {showAllExpenses ? '折りたたむ' : `全て見る (${expenses.length}件)`}
+                                    </button>
+                                )}
+                                {expenses.length > 0 && (
+                                    <button
+                                        onClick={handleDeleteAll}
+                                        className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 hover:bg-red-50 rounded"
+                                    >
+                                        今月のデータを全て削除
+                                    </button>
+                                )}
+                            </div>
                         </div>
-                        <div className="space-y-4 max-h-64 overflow-y-auto pr-2 flex-grow">
+                        <div className={`space-y-4 pr-2 flex-grow overflow-y-auto transition-all ${showAllExpenses ? 'max-h-[600px]' : 'max-h-64'}`}>
                             {loading ? (
                                 <div className="text-center py-4 text-gray-400">読み込み中...</div>
                             ) : (
