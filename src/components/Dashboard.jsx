@@ -14,6 +14,11 @@ const Dashboard = ({ onEdit }) => {
         const now = new Date();
         return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     });
+    const [showCsvPanel, setShowCsvPanel] = useState(false);
+    const [csvStartDate, setCsvStartDate] = useState('');
+    const [csvEndDate, setCsvEndDate] = useState('');
+    const [csvLoading, setCsvLoading] = useState(false);
+    const [excelLoading, setExcelLoading] = useState(false);
 
     useEffect(() => {
         fetchData();
@@ -126,6 +131,269 @@ const Dashboard = ({ onEdit }) => {
         }
     };
 
+    const drawPieChart = (categoryData, grandTotal) => {
+        return new Promise((resolve) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 560;
+            canvas.height = 400;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = '#1f2937';
+            ctx.font = 'bold 18px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('カテゴリ別支出', 180, 28);
+
+            const colors = ['#0088FE','#00C49F','#FFBB28','#FF8042','#8884d8','#82ca9d','#ffc658','#ff6b6b','#a29bfe','#fd79a8','#00b894','#e17055','#74b9ff','#55efc4','#fdcb6e','#636e72'];
+            const cx = 175, cy = 215, radius = 155;
+            let startAngle = -Math.PI / 2;
+
+            categoryData.forEach(([, amount], i) => {
+                const slice = grandTotal > 0 ? (amount / grandTotal) * 2 * Math.PI : 0;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.arc(cx, cy, radius, startAngle, startAngle + slice);
+                ctx.closePath();
+                ctx.fillStyle = colors[i % colors.length];
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                startAngle += slice;
+            });
+
+            let legendY = 36;
+            ctx.font = '13px sans-serif';
+            categoryData.forEach(([cat, amount], i) => {
+                const ratio = grandTotal > 0 ? ((amount / grandTotal) * 100).toFixed(1) : '0.0';
+                ctx.fillStyle = colors[i % colors.length];
+                ctx.fillRect(370, legendY - 11, 14, 14);
+                ctx.fillStyle = '#374151';
+                ctx.textAlign = 'left';
+                ctx.fillText(`${cat}  ${ratio}%`, 392, legendY);
+                legendY += 24;
+            });
+
+            resolve(canvas.toDataURL('image/png').split(',')[1]);
+        });
+    };
+
+    const handleDownloadExcel = async () => {
+        if (!csvStartDate || !csvEndDate) {
+            alert('開始日と終了日を入力してください。');
+            return;
+        }
+        if (csvStartDate > csvEndDate) {
+            alert('開始日は終了日より前の日付を指定してください。');
+            return;
+        }
+
+        setExcelLoading(true);
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const q = query(
+                collection(db, "expenses"),
+                where("uid", "==", user.uid),
+                where("date", ">=", csvStartDate),
+                where("date", "<=", csvEndDate),
+                orderBy("date", "desc")
+            );
+            const querySnapshot = await getDocs(q);
+            const data = querySnapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .sort((a, b) => {
+                    const catCmp = (a.category || 'その他').localeCompare(b.category || 'その他', 'ja');
+                    return catCmp !== 0 ? catCmp : a.date.localeCompare(b.date);
+                });
+
+            if (data.length === 0) {
+                alert('指定期間のデータが見つかりませんでした。');
+                return;
+            }
+
+            const categoryTotals = {};
+            data.forEach(item => {
+                const cat = item.category || 'その他';
+                categoryTotals[cat] = (categoryTotals[cat] || 0) + (Number(item.totalAmount) || 0);
+            });
+            const categoryData = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]);
+            const grandTotal = categoryData.reduce((sum, [, v]) => sum + v, 0);
+
+            const { default: ExcelJS } = await import('exceljs');
+            const workbook = new ExcelJS.Workbook();
+
+            // --- Sheet 1: 明細 ---
+            const detailSheet = workbook.addWorksheet('明細');
+            detailSheet.columns = [
+                { header: '日付', key: 'date', width: 14 },
+                { header: '店舗名', key: 'merchant', width: 22 },
+                { header: 'カテゴリ', key: 'category', width: 16 },
+                { header: '金額（円）', key: 'amount', width: 14 },
+                { header: '品目', key: 'items', width: 45 },
+            ];
+            const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3B82F6' } };
+            const headerFont = { bold: true, color: { argb: 'FFFFFFFF' } };
+            detailSheet.getRow(1).eachCell(cell => {
+                cell.fill = headerFill;
+                cell.font = headerFont;
+                cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                cell.border = { bottom: { style: 'thin', color: { argb: 'FFBFDBFE' } } };
+            });
+
+            let currentCat = null;
+            let catStartRow = 2;
+            let rowNum = 2;
+
+            const addSubtotal = (catName, fromRow, toRow) => {
+                const sr = detailSheet.addRow(['', '', `${catName} 小計`, { formula: `SUM(D${fromRow}:D${toRow})` }, '']);
+                sr.eachCell((cell, col) => {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+                    cell.font = { bold: true, color: { argb: 'FF1D4ED8' } };
+                    if (col === 4) cell.numFmt = '#,##0';
+                });
+            };
+
+            for (const item of data) {
+                const cat = item.category || 'その他';
+                if (cat !== currentCat) {
+                    if (currentCat !== null) {
+                        addSubtotal(currentCat, catStartRow, rowNum - 1);
+                        rowNum++;
+                    }
+                    currentCat = cat;
+                    catStartRow = rowNum;
+                }
+                const itemsStr = (item.items || []).map(i => `${i.name}(¥${i.price})`).join(', ');
+                const row = detailSheet.addRow([item.date, item.merchant || '', cat, Number(item.totalAmount) || 0, itemsStr]);
+                row.getCell(4).numFmt = '#,##0';
+                row.eachCell(cell => { cell.alignment = { vertical: 'middle' }; });
+                rowNum++;
+            }
+            if (currentCat !== null) {
+                addSubtotal(currentCat, catStartRow, rowNum - 1);
+                rowNum++;
+            }
+            const totalRow = detailSheet.addRow(['', '', '合計', grandTotal, '']);
+            totalRow.eachCell((cell, col) => {
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } };
+                cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+                if (col === 4) cell.numFmt = '#,##0';
+            });
+
+            // --- Sheet 2: カテゴリ集計 ---
+            const summarySheet = workbook.addWorksheet('カテゴリ集計');
+            summarySheet.columns = [
+                { header: 'カテゴリ', key: 'cat', width: 18 },
+                { header: '合計金額（円）', key: 'amount', width: 16 },
+                { header: '割合', key: 'ratio', width: 10 },
+            ];
+            summarySheet.getRow(1).eachCell(cell => {
+                cell.fill = headerFill;
+                cell.font = headerFont;
+                cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            });
+            categoryData.forEach(([cat, amount]) => {
+                const row = summarySheet.addRow([cat, amount, grandTotal > 0 ? amount / grandTotal : 0]);
+                row.getCell(2).numFmt = '#,##0';
+                row.getCell(3).numFmt = '0.0%';
+            });
+            const sTotalRow = summarySheet.addRow(['合計', grandTotal, 1]);
+            sTotalRow.eachCell((cell, col) => {
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } };
+                cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+                if (col === 2) cell.numFmt = '#,##0';
+                if (col === 3) cell.numFmt = '0.0%';
+            });
+
+            // 円グラフ画像を埋め込む
+            const chartPng = await drawPieChart(categoryData, grandTotal);
+            const imageId = workbook.addImage({ base64: chartPng, extension: 'png' });
+            summarySheet.addImage(imageId, { tl: { col: 4, row: 0 }, ext: { width: 560, height: 400 } });
+
+            // ダウンロード
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `kakeibo_${csvStartDate}_${csvEndDate}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Excel download error:', error);
+            alert('ダウンロードに失敗しました。');
+        } finally {
+            setExcelLoading(false);
+        }
+    };
+
+    const handleDownloadCSV = async () => {
+        if (!csvStartDate || !csvEndDate) {
+            alert('開始日と終了日を入力してください。');
+            return;
+        }
+        if (csvStartDate > csvEndDate) {
+            alert('開始日は終了日より前の日付を指定してください。');
+            return;
+        }
+
+        setCsvLoading(true);
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const q = query(
+                collection(db, "expenses"),
+                where("uid", "==", user.uid),
+                where("date", ">=", csvStartDate),
+                where("date", "<=", csvEndDate),
+                orderBy("date", "desc")
+            );
+
+            const querySnapshot = await getDocs(q);
+            const data = querySnapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .sort((a, b) => a.date.localeCompare(b.date));
+
+            if (data.length === 0) {
+                alert('指定期間のデータが見つかりませんでした。');
+                return;
+            }
+
+            const headers = ['日付', '店舗名', 'カテゴリ', '合計金額（円）', '品目'];
+            const rows = data.map(item => {
+                const itemsStr = (item.items || []).map(i => `${i.name}(¥${i.price})`).join('|');
+                return [
+                    item.date,
+                    `"${(item.merchant || '').replace(/"/g, '""')}"`,
+                    `"${(item.category || '').replace(/"/g, '""')}"`,
+                    item.totalAmount || 0,
+                    `"${itemsStr.replace(/"/g, '""')}"`
+                ].join(',');
+            });
+
+            const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `kakeibo_${csvStartDate}_${csvEndDate}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('CSV download error:', error);
+            alert('ダウンロードに失敗しました。');
+        } finally {
+            setCsvLoading(false);
+        }
+    };
+
     if (loading && expenses.length === 0) {
         return <div className="text-center py-8">読み込み中...</div>;
     }
@@ -211,6 +479,80 @@ const Dashboard = ({ onEdit }) => {
                         </svg>
                     </button>
                 </div>
+            </div>
+
+            {/* CSV Download */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+                <button
+                    onClick={() => setShowCsvPanel(prev => !prev)}
+                    className="w-full flex items-center justify-between px-5 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-xl transition-colors"
+                >
+                    <div className="flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        CSVダウンロード
+                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 text-gray-400 transition-transform ${showCsvPanel ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                </button>
+                {showCsvPanel && (
+                    <div className="px-5 pb-4 border-t border-gray-100 pt-4">
+                        <div className="flex flex-col sm:flex-row items-end gap-3">
+                            <div className="flex flex-col gap-1 w-full sm:w-auto">
+                                <label className="text-xs text-gray-500 font-medium">開始日</label>
+                                <input
+                                    type="date"
+                                    value={csvStartDate}
+                                    onChange={e => setCsvStartDate(e.target.value)}
+                                    className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                                />
+                            </div>
+                            <div className="flex flex-col gap-1 w-full sm:w-auto">
+                                <label className="text-xs text-gray-500 font-medium">終了日</label>
+                                <input
+                                    type="date"
+                                    value={csvEndDate}
+                                    onChange={e => setCsvEndDate(e.target.value)}
+                                    className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                            <button
+                                onClick={handleDownloadExcel}
+                                disabled={excelLoading}
+                                className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors"
+                            >
+                                {excelLoading ? (
+                                    <>
+                                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                        </svg>
+                                        生成中...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        Excelダウンロード（円グラフ付き）
+                                    </>
+                                )}
+                            </button>
+                            <button
+                                onClick={handleDownloadCSV}
+                                disabled={csvLoading}
+                                className="flex items-center justify-center gap-1 bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 text-gray-600 font-medium text-sm px-4 py-2 rounded-lg transition-colors"
+                            >
+                                {csvLoading ? '処理中...' : 'CSV'}
+                            </button>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-2">Excelはカテゴリ別ソート・小計・円グラフ付き。CSVはシンプルな一覧形式。</p>
+                    </div>
+                )}
             </div>
 
             {/* Summary Cards */}
